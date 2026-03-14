@@ -1,0 +1,355 @@
+# Build and Deploy Java Application to the respective Environment based on selection.
+# 1st Step to setup Java and Maven.
+# 2nd Step to Build the application.
+# 3rd Step to Push the Container Image to ECR.
+# 4th Step to Create  / Update Kubernetes yaml files to Argocd GitHub branch.
+# 5th Step to Create  / Update ArgoCD application.
+name: Build_Deploy_Java_Application
+
+on:
+  workflow_call:
+    inputs:
+      ENV_NAME: 
+        required: true
+        type: string
+
+env:
+  ECR_TAG: ${{ github.event.repository.name }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+  NEXUS_REPOSITORY: ${{ vars.NEXUS_REPOSITORY }}
+        
+jobs:
+  Build_Deploy_Java_Application:
+    runs-on: ${{ vars.GITHUB_RUNNER }}
+    environment: ${{ inputs.ENV_NAME }}
+
+    steps:
+
+        # Set the AWS Credentials based on the Environment and fetch the secret from GitHub Organization.
+        # Set your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in GitHub Organization secrets with below naming convention.
+        # It will set the AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as environment variable which will be used in the Build and Deploy process.
+      - name: AWS - Setting Access and Secret Access Key for env=${{ inputs.ENV_NAME }}
+        run: |
+              if [[ "${{ inputs.ENV_NAME }}" = "dev" ]]; then
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_DEV }}" >> $GITHUB_ENV
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}" >> $GITHUB_ENV
+              elif [[ "${{ inputs.ENV_NAME }}" = "qa" ]]; then
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_QA }}" >> $GITHUB_ENV
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_QA }}" >> $GITHUB_ENV
+              elif [[ "${{ inputs.ENV_NAME }}" = "int" ]]; then
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_INT }}" >> $GITHUB_ENV
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_INT }}" >> $GITHUB_ENV
+              elif [[ "${{ inputs.ENV_NAME }}" = "stg" ]]; then
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_STG }}" >> $GITHUB_ENV
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}" >> $GITHUB_ENV
+              elif [[ "${{ inputs.ENV_NAME }}" = "prod" ]]; then
+              echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_PROD }}" >> $GITHUB_ENV
+              echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_PROD }}" >> $GITHUB_ENV
+              else
+              echo "Please select valid environment"
+              fi 
+
+    #     # Configure the AWS credentials with GitHub runner.
+    #   - name: AWS - configure AWS credentials
+    #     uses: aws-actions/configure-aws-credentials@v4
+    #     with:
+    #       aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+    #       aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+    #       aws-region: ${{ vars.AWS_REGION }}
+
+    #     # Logging to ECR and allows to push Container image to ECR.
+    #   - name: AWS - login to AWS ECR
+    #     id: login-ecr
+    #     uses: aws-actions/amazon-ecr-login@v2
+
+    #     # Setting the dynamic variables based on Environment which are used in the Build and Deploy process.
+    #   - name: Setting dynamic variables
+    #     run: |
+    #           echo "ECR_ARN=$(aws sts get-caller-identity --query 'Account' --output text).dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com" >> $GITHUB_ENV
+    #           echo "BR_NAME=$(echo $GITHUB_REF | sed 's/refs\/heads\///'| tr '/' '_')" >> $GITHUB_ENV
+    #           echo "ECR_STATUS=$(aws ecr describe-repositories --repository-names ${{ env.ECR_TAG }} --query 'repositories[0].repositoryName' --region ${{ vars.AWS_REGION }})" >> $GITHUB_ENV
+    #           echo "CLOUDWATCH_STATUS=$(aws logs describe-log-groups --log-group-name-pattern ${{ env.ECR_TAG }} --query 'logGroups[0].logGroupName' --region ${{ vars.AWS_REGION }})" >> $GITHUB_ENV
+    #           if [[ "${{ inputs.ENV_NAME }}" = "prod" ]]; then
+    #           echo "TF_REUSABLE_WORKFLOWS_REF=main" >> $GITHUB_ENV
+    #           else
+    #           echo "TF_REUSABLE_WORKFLOWS_REF=devenv" >> $GITHUB_ENV
+    #           fi 
+
+    #     # Fetching the Secrets from AWS Secret Manager which are used in the Build and Deploy Process.
+    #   - name: Setting secrets from aws secrets manager
+    #     id: get-secrets
+    #     uses: aws-actions/aws-secretsmanager-get-secrets@v2
+    #     with:
+    #       secret-ids: |
+    #         ghsecrets
+    #       parse-json-secrets: true
+
+    #     # Checking the existing Cloud Watch Group and ECR with respect with GitHub Repo name. If its not available it will help to initiate Terraform Infra step to trigger the creation of Infra.
+    #   - name: AWS ECR and Cloudwatch log-group avilability
+    #     run: |
+    #           echo ECR repository names if available.
+    #           echo ${{ env.ECR_STATUS }}
+    #           echo Cloudwatch log group name if available
+    #           echo ${{ env.CLOUDWATCH_STATUS }}    
+
+    #     # Checking the existing Cloud Watch Group and ECR with respect with GitHub Repo name. If its not available it will help to initiate Terraform Infra step to trigger the creation of Infra.
+    #   - name: AWS Infra - Checkout reusable-workflow repo
+    #     if: ${{ !contains(env.ECR_STATUS, github.event.repository.name) || !contains(env.CLOUDWATCH_STATUS, github.event.repository.name) }}
+    #     uses: actions/checkout@v4
+    #     with:
+    #       repository: rajkumaraute/reusable-workflows
+    #       ref: ${{ env.TF_REUSABLE_WORKFLOWS_REF }}
+    #       token: ${{ secrets.GH_PAT }}
+
+    #     # Terraform support applications installation.
+    #   - name: AWS Infra - Setup Node.js
+    #     if: ${{ !contains(env.ECR_STATUS, github.event.repository.name) || !contains(env.CLOUDWATCH_STATUS, github.event.repository.name) }}
+    #     uses: actions/setup-node@v3
+    #     with:
+    #       node-version: ${{ vars.NODE_VERSION_TF }}
+
+    #     # Installing Terraform to the Runner.
+    #   - name: AWS Infra - Setup Terraform
+    #     if: ${{ !contains(env.ECR_STATUS, github.event.repository.name) || !contains(env.CLOUDWATCH_STATUS, github.event.repository.name) }}
+    #     uses: hashicorp/setup-terraform@v1
+    #     with:
+    #       terraform_version: ${{ vars.TF_VERSION }}
+
+    #     # Creating Cloud Watch Log Group and ECR by Terraform. 
+    #   - name: AWS Infra - Terraform plan and apply to create ECR and Cloudwatch for the ${{ github.event.repository.name }} application/service (if not created)
+    #     if: ${{ !contains(env.ECR_STATUS, github.event.repository.name) || !contains(env.CLOUDWATCH_STATUS, github.event.repository.name) }}
+    #     run: |
+    #         cd ./.github/workflows/tf
+    #         pwd
+    #         ls -a
+    #         echo "creating ${{ env.ECR_TAG }} ECR and CloudWatch in ${{ inputs.ENV_NAME }} env AWS account"
+    #         terraform init -backend-config=bucket=rajkumaraute-infra-tf-state-${{ inputs.ENV_NAME }} -backend-config=key=config=ecr-repo/${{ env.ECR_TAG }}.tfstate
+    #         terraform plan -var=shared_state_bucket=rajkumaraute-infra-tf-state-${{ inputs.ENV_NAME }} -var=app_name=${{ env.ECR_TAG }}
+    #         terraform apply -var=shared_state_bucket=rajkumaraute-infra-tf-state-${{ inputs.ENV_NAME }} -var=app_name=${{ env.ECR_TAG }} --auto-approve
+
+    #     # Checking out Application Code from GitHub Repo.
+    #   - name: Checkout ${{ github.event.repository.name }} repo, ${{ github.ref_name }} branch
+    #     uses: actions/checkout@v4
+    #     with:
+    #       token: ${{ secrets.GH_PAT }}
+
+    #   - name: Set up Java for Maven Build, version ${{ vars.JAVA_VERSION }}
+    #     uses: actions/setup-java@v2
+    #     with:
+    #       distribution: ${{ vars.JAVA_DISTRIBUTION }}
+    #       java-version: ${{ vars.JAVA_VERSION }}
+    #       cache: maven
+
+    #   - name: Maven setup, version ${{ vars.MAVEN_VERSION }}
+    #     uses: stCarolas/setup-maven@v4.5
+    #     with:
+    #       maven-version: ${{ vars.MAVEN_VERSION }}
+
+    #   - name: Build Maven project
+    #     run: |
+    #           mvn clean install \
+    #           -Dquarkus.profile=${{ inputs.ENV_NAME }} \
+    #           -Daws.accessKeyId=${{ env.AWS_ACCESS_KEY_ID }} \
+    #           -Daws.secretAccessKey=${{ env.AWS_SECRET_ACCESS_KEY }} \
+    #           -Dmaven.test.failure.ignore=${{ vars.MAVEN_TEST_FAILURE_IGNORE_BUILD }} \
+    #           -DskipTests=${{ vars.BUILD_SKIP_TEST_FLAG }}
+
+    #     # Docker Image Build the Appication and Tagging the image with GitHub Build number.
+    #   - name: AWS ECR - Docker build and tag the image
+    #     if: env.CONTRAST_SCAN_ENABLED == 'false'
+    #     run: |
+    #           docker build --build-arg WORK_SPACE=${{ github.workspace }} \
+    #                        --build-arg accessKeyId=${{ env.AWS_ACCESS_KEY_ID }} \
+    #                        --build-arg accessKeySecret=${{ env.AWS_SECRET_ACCESS_KEY }} \
+    #                        --build-arg envName=${{ inputs.ENV_NAME }} \
+    #                        -t ${{ env.ECR_ARN }}/${{ env.ECR_TAG }}:GH-${{ env.BR_NAME }}-${{ github.run_number }} . \
+    #                        ${{ vars.DOCKER_BUILD_COMMANDS }}
+
+    #     # Building the Application with Contrast Security Scan with Github Build number.
+    #     # It will be enabled by adding GitHub variable "CONTRAST_SCAN_ENABLED" at Env level.
+    #   - name: AWS ECR - Docker and Contrast build and tag the image
+    #     if: env.CONTRAST_SCAN_ENABLED == 'true'
+    #     run: |
+    #           docker build --build-arg WORK_SPACE=${{ github.workspace }} \
+    #                        --build-arg accessKeyId=${{ env.AWS_ACCESS_KEY_ID }} \
+    #                        --build-arg accessKeySecret=${{ env.AWS_SECRET_ACCESS_KEY }} \
+    #                        --build-arg CONTRAST_API_URL=https://contrast.devsecopsguru.in/Contrast \
+    #                        --build-arg CONTRAST_API_API_KEY=${{ vars.CONTRAST_API_API_KEY }} \
+    #                        --build-arg CONTRAST_API_SERVICE_KEY=${{ vars.CONTRAST_API_SERVICE_KEY }} \
+    #                        --build-arg CONTRAST_API_USER_NAME=${{ vars.CONTRAST_API_USER_NAME }} \
+    #                        --build-arg CONTRAST_APPLICATION_METADATA=aPPID=${{ vars.CONTRAST_APPID }} \
+    #                        --build-arg CONTRAST_APPLICATION_NAME=Applications \
+    #                        --build-arg CONTRAST_APPLICATION_GROUP=rajkumaraute \
+    #                        --build-arg envName=${{ inputs.ENV_NAME }} \
+    #                        -t ${{ env.ECR_ARN }}/${{ env.ECR_TAG }}:GH-${{ env.BR_NAME }}-${{ github.run_number }} . \
+    #                        ${{ vars.DOCKER_BUILD_COMMANDS }}
+
+    #     # Pushing the Container image to ECR.
+    #   - name: AWS ECR - Push the Docker image to AWS ECR
+    #     run: |
+    #           docker push ${{ env.ECR_ARN }}/${{ env.ECR_TAG }}:GH-${{ env.BR_NAME }}-${{ github.run_number }}
+
+    #     # Installing and Scaning SBOM this will list all the 1st and 3rd party application installed and used in the container image.
+    #   - name: Security - Install docker-sbom plugin and Scan
+    #     if: ${{ github.ref == 'refs/heads/intenv' }}
+    #     run: |
+    #           curl -sSfL https://raw.githubusercontent.com/docker/sbom-cli-plugin/main/install.sh | sh -s --
+    #           docker sbom ${{ env.ECR_ARN }}/${{ env.ECR_TAG }}:GH-${{ env.BR_NAME }}-${{ github.run_number }}
+
+    #     # Checking our Argocd GitHub Central Repo to create / update the Kubernetes yaml files.
+    #   - name: Checkout rajkumaraute/argocd repo, ${{ inputs.ENV_NAME }}env branch
+    #     uses: actions/checkout@v4
+    #     with:
+    #       token: ${{ secrets.GH_PAT }}
+    #       repository: rajkumaraute/argocd
+    #       ref: '${{ inputs.ENV_NAME }}env'
+
+    #     # Creating / Updating Kubernetes yaml file to ArgoCD GitHub Central repo.
+    #   - name: K8S - Adding / Updating Kubernetes yaml file to centralized ArgoCD repo.
+    #     env:
+    #       appname: ${{ vars.K8s_APP_URL }}
+    #       namespace: ${{ vars.K8S_NAMESPACE }}
+    #       env: ${{ inputs.ENV_NAME }}
+    #       ecr: ${{ env.ECR_ARN }}/${{ env.ECR_TAG }}:GH-${{ env.BR_NAME }}-${{ github.run_number }}
+    #       replicascount: ${{ vars.K8S_REPLICAS_COUNT }}
+    #       cpulimits: ${{ vars.K8S_CPU_LIMITS }}
+    #       memorylimits: ${{ vars.K8S_MEMORY_LIMITS }}
+    #       cpurequests: ${{ vars.K8S_CPU_REQUESTS }}
+    #       memoryrequests: ${{ vars.K8S_MEMORY_REQUESTS }}
+    #       baseurl: ${{ env.GHSECRETS_APP_WEB_BASE_URL }}
+    #       basepublicurl: ${{ env.GHSECRETS_APP_WEB_BASE_PUB_URL }}
+    #       basenetpublicurl: ${{ env.GHSECRETS_APP_WEB_BASE_NET_PUB_URL }}
+    #       basecompublicurl: ${{ env.GHSECRETS_APP_WEB_BASE_COM_PUB_URL }}
+
+    #     run: |
+    #           mkdir -p k8s-yaml/${{ vars.K8S_NAMESPACE }}/${{ inputs.ENV_NAME }}
+    #           cd k8s-yaml/${{ vars.K8S_NAMESPACE }}/${{ inputs.ENV_NAME }}
+    #           echo Present working directory is
+    #           pwd
+    #           echo List of files
+    #           ls -la
+    #           git config --local user.email Git-Actions-Build
+    #           git config --local user.name Git-Actions-Build
+    #           echo "Creating deployment.yaml file"
+    #           cat <<EOF > deployment.yaml
+    #           ${{ vars.K8S_DEPLOYMENT_YAML }}
+    #           EOF
+    #           echo "Creating hpa.yaml file"
+    #           cat <<EOF > hpa.yaml
+    #           ${{ vars.K8S_HPA_YAML }}
+    #           EOF
+    #           echo "Creating service.yaml file"
+    #           cat <<EOF > service.yaml
+    #           ${{ vars.K8S_SERVICE_YAML }}
+    #           EOF
+    #           echo "Creating ssl-cert.yaml file"
+    #           cat <<EOF > ssl-cert.yaml
+    #           ${{ vars.K8S_CERTIFICATE_YAML }}
+    #           EOF
+    #           if [[ "${{ github.event.repository.name }}" =~ "aggregator" ]] && [[ ${{ inputs.ENV_NAME }} != "dev" ]]; then
+    #           echo "Creating ingress.yaml for with public access"
+    #           cat <<EOF > ingress.yaml
+    #           ${{ vars.K8S_INGRESS_PUBLIC_YAML }}
+    #           EOF
+    #           echo "Creating ssl-cert public"
+    #           cat <<EOF > ssl-cert-pub.yaml
+    #           ${{ vars.K8S_CERTIFICATE_PUBLIC_YAML }}
+    #           EOF
+    #           else
+    #           echo "Creating ingress.yaml"
+    #           cat <<EOF > ingress.yaml
+    #           ${{ vars.K8S_INGRESS_YAML }}
+    #           EOF
+    #           fi
+    #           cd ../
+    #           echo "Creating SVC and Namespace file"
+    #           cat <<EOF > svc-namespace.json
+    #           ${{ vars.K8S_NS_SVC_JSON }}
+    #           EOF
+    #           echo "git add and commit"
+    #           git status
+    #           git add .
+    #           git status
+    #           if git diff-index --quiet HEAD --; then
+    #           echo "No changes to commit."
+    #           else
+    #           git commit -m "Image tag updated deployment.yaml to centralized argocd repo GH-$BR_NAME-${{ github.run_number }}, App-${{ github.event.repository.name }}."
+    #           git push origin ${{ inputs.ENV_NAME }}env  # replace <branch_name> with the actual branch name
+    #           fi
+
+    #     # ArgoCD variables informations.
+    #   - name: ArgoCD - ArgoCD Application Deploy. Check this stage if ArgoCD deployment fails.
+    #     run: |
+    #           echo "ArgoCD required info's"
+    #           echo "add the below variables repo / env level if not added."
+    #           echo "APPLICATION_NAME = <APPLICATION>-applications (repo level)"
+    #           echo "if you don't see any value after == kindly check secret / variables in GitHub Environment Variables  or reach DevOps team"
+    #           echo "ArgoCD_Server_Address_${{ inputs.ENV_NAME }} ARGOCD_SERVER == ${{ env.GHSECRETS_ARGOCD_SERVER }}"
+    #           echo "ArgoCD_token ARGOCD_TOKEN == ${{ env.GHSECRETS_ARGOCD_TOKEN }}"
+    #           echo "APPLICATION_NAME APPLICATION_NAME== ${{ vars.APPLICATION_NAME }}"
+    #           echo " Kubernetes Namespace fix value K8S_NAMESPACE == ${{ vars.K8S_NAMESPACE }}"
+    #           echo "Branch_Name == ${{ github.ref_name }}"
+    #           echo "GitHub_Repo_name == ${{ github.event.repository.name }}"
+    #           echo "GitHub_Repo_html_URL == ${{ github.event.repository.html_url }}"
+    #           echo "GitHub_Repo_SSL_URL == ${{ github.event.repository.ssh_url }}"
+    #           cat <<EOF >> private.key
+    #           ${{ secrets.ARGOCD_PRIVATE_KEY }}
+    #           EOF
+
+    #     # Downloading and Installing Argocd Cli to run argocd commands.
+    #   - name: ArgoCD - Downloading and installing ArgoCD Cli on GitHub Runner
+    #     run: |
+    #           echo "Downloading and installing Argo CD Cli on runner"
+    #           curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+    #           sudo install -m 555 argocd-linux-amd64 /usr/local/bin/argocd
+    #           rm argocd-linux-amd64
+
+    #     # Adding ArgoCD project its a Group of Applications with respective APPLICATION.
+    #   - name: ArgoCD - Adding ArgoCD Project ${{ vars.APPLICATION_NAME }} APPLICATION details to  ${{ inputs.ENV_NAME }} cluster
+    #     run: |
+    #           echo "Adding ArgoCD Project ${{ vars.APPLICATION_NAME }} APPLICATION details to  ${{ inputs.ENV_NAME }} cluster"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           proj create ${{ vars.APPLICATION_NAME }} --src '*' --dest "*,*" --description "${{ vars.APPLICATION_NAME }} APPLICATION applications deployed in this project." \
+    #           --upsert --grpc-web
+    #           echo "Listing ArgoCD Project details to  ${{ inputs.ENV_NAME }} cluster"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           proj list \
+    #           --grpc-web
+
+    #     # Adding GitHub Repo to ArgoCD and it will help ArgoCD to connect and fetch the Kubernetes yaml files.
+    #   - name: ArgoCD - Adding GitHub Repo ${{ github.event.repository.ssh_url }} details to  ${{ inputs.ENV_NAME }} cluster ArgoCD repository
+    #     run: |
+    #           echo "Adding GitHub Repo ${{ github.event.repository.ssh_url }} details to  ${{ inputs.ENV_NAME }} cluster ArgoCD repository"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           repo add --name ${{ vars.K8S_NAMESPACE }} ${{ github.event.repository.ssh_url }} \
+    #           --ssh-private-key-path ./private.key \
+    #           --upsert --grpc-web
+    #           echo "Adding GitHub Repo GitHub Repo ${{ inputs.ENV_NAME }} cluster ArgoCD repository"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           repo add --name rajkumaraute-argocd.git \
+    #           --ssh-private-key-path ./private.key \
+    #           --upsert --grpc-web
+    #           echo "Listing GitHub Repo details to  ${{ inputs.ENV_NAME }} cluster ArgoCD repositoris"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           repo list \
+    #           --grpc-web    
+
+    #     # Creating  / Updating the ArgoCD application.
+    #   - name: ArgoCD - Creating ArgoCD application ${{ vars.K8S_NAMESPACE }} on  ${{ inputs.ENV_NAME }} cluster with branch argocd-k8s-yaml
+    #     run: |
+    #           echo "Creating ArgoCD application ${{ vars.K8S_NAMESPACE }} on  ${{ inputs.ENV_NAME }} cluster with branch argocd-k8s-yaml"
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           app create ${{ vars.K8S_NAMESPACE }} \
+    #           --repo rajkumaraute/argocd.git \
+    #           --revision ${{ inputs.ENV_NAME }}env --path k8s-yaml/${{ vars.K8S_NAMESPACE }}/${{ inputs.ENV_NAME }} \
+    #           --dest-namespace ${{ vars.K8S_NAMESPACE }} \
+    #           --project ${{ vars.APPLICATION_NAME }} \
+    #           --revision-history-limit 5 --sync-policy auto \
+    #           --dest-server https://kubernetes.default.svc \
+    #           --label "app=${{ vars.K8S_NAMESPACE }}" \
+    #           --label "env=${{ inputs.ENV_NAME }}" \
+    #           --auto-prune --self-heal --upsert --grpc-web
+    #           echo "Listing ArgoCD applications on  ${{ inputs.ENV_NAME }} cluster."
+    #           argocd --server ${{ env.GHSECRETS_ARGOCD_SERVER }} --auth-token ${{ env.GHSECRETS_ARGOCD_TOKEN }} \
+    #           app list \
+    #           --grpc-web
